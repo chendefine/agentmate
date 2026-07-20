@@ -259,7 +259,7 @@ for (const target of targets) patchTarget(target);
 | **C3** | **幂等性**:先 `countOccurrences` 判定 "已打过",命中则 `return` | 镜像层缓存、重复执行、上游部分采纳修复时都不会重复打/出错 |
 | **C4** | **锚点唯一性**:旧文本必须 `=== 1` 次出现,否则 `fail()` | 防止上游改了代码后,补丁静默打错位置或打空 |
 | **C5** | **后置断言**:打完后必须新 marker 在、旧 marker 走、结构完整 | 防止 `replace` 只命中部分、或被上游重构破坏 |
-| **C6** | **marker 注释/常量**:每个补丁注入一句独一无二的 `// HolyClaude ...` 或 `const HOLYCLAUDE_..._PATCH = true;` | 给 Dockerfile 的 `grep -Fq` 复核提供稳定锚点;给 `verify-*.mjs` 检测器识别"是谁打的" |
+| **C6** | **marker 注释/常量**:每个补丁注入一句独一无二的 `// HolyClaude ...` 或 `const HOLYCLAUDE_..._PATCH = true;` | 给 Dockerfile 的 `grep -Fq` 复核提供稳定锚点;给 `verify-*.mjs` 检测器识别"是谁打的"。**⚠️ 此规则只适用于 Layer B**(打在**未压缩**的 `dist-server/*.js`,注释保留)。Layer A 的产物是 esbuild **压缩**后的 `dist/assets/*.js`,JS 注释会被剥离——Layer A 的检测器/grep **必须用字符串字面量标记**(如组件上的 `data-<feature>-bridge=""` 属性、或必然会保留的字符串常量),**不能用注释**。 |
 | **C7** | **源码 + 产物双打**:`targets` 同时含 `.ts/.js` 源码与 `dist-server/*.js` 产物 | 上游若以源码形式重新构建,补丁仍在;只改产物会在重构建时丢失 |
 | **C8** | **CRLF 归一**:`readFileSync(...).replace(/\r\n/g, '\n')`(base-path / web-terminal 采用) | 避免 Windows 换行让锚点匹配失败 |
 | **C9** | **辅助函数复用**:`readSource` / `writeSource` / `replaceRequired(source, old, new)`(`new` 已存在则原样返回,`old` 不存在则 `fail()`) | 把幂等 + 锚点断言封装进一个 helper,降低出错率 |
@@ -318,6 +318,8 @@ RUN CLOUDCLI_SERVER=".../server/index.js" && \
 
 > 这个检测器实现了 manifest 里写的 **"removal" 条款**:一旦上游 CloudCLI 原生支持本地账号管理,状态会变成 `upstream-complete`,HolyClaude 就可以删掉这套 overlay。**本项目自定义补丁也应配套写一个检测器,标注移除条件。**
 
+> **dist-only 覆盖安装时的检测器注意**:整包重装(`npm i -g`)后,安装目录的 `npm-shrinkwrap.json` 会反映新依赖,检测器可 grep 锁文件确认依赖就位。但 **dist-only 覆盖**(§7.1.1)只换 `dist/`,安装目录的锁文件仍是基础镜像的旧版——此时检测器**只能依赖 `dist/assets/*.js` 里的字符串标记**(见 §4.2 C6),不能依赖锁文件。
+
 ### 5.3 构建期可复现双校验(见 §2.2 第 6–7 步)
 
 两次 `npm pack` 的 tgz `sha256` 必须一致;两次 `npm install -g` 的依赖树归一化 `sha256` 必须一致。任何不一致都 `throw`。
@@ -369,15 +371,26 @@ RUN CLOUDCLI_SERVER=".../server/index.js" && \
                     除非补丁需要被前端感知
 ```
 
+#### 7.1.1 Layer A 的安装策略:整包重装 vs dist-only 覆盖(实战经验)
+
+Layer A **不一定要整包 `npm i -g` 重装**。按改动是否触及 `dist-server/` 选策略:
+
+| 改动范围 | 安装策略 | 说明 |
+|---|---|---|
+| **只改前端**(产物只进 `dist/assets/*.js`) | **dist-only 覆盖**(推荐) | Dockerfile 只从 tgz 解出 `package/dist` 覆盖到 `$CLOUDCLI_ROOT/dist`,`dist-server/` 原样保留。基础镜像里 HolyClaude 的 7 个运行时补丁**全部不受影响、无需重新应用**,account-management 等功能不回归。 |
+| 改了服务端源码 / 后端依赖 | **整包重装** `npm i -g tgz` | 会抹掉 `dist-server/` 里的运行时补丁,**必须**在 Dockerfile 重新应用 HolyClaude 的 7 个 `patch-cloudcli-*.mjs`(注意 web-terminal 补丁的目标目录只在运行时存在,构建期重打是 catch-22),成本与回归面都大。 |
+
+> 判据:通读 7 个 `patch-cloudcli-*.mjs`,只要**没有写 `dist/`** 的(实测全部写 `dist-server/` 或外部插件目录),前端改动就适合 dist-only 覆盖。office-preview 实践([`docs/patches/001_support_multi_file_view.md`](patches/001_support_multi_file_view.md))即用此策略,零回归。
+
 ### 7.2 命名与目录约定
 
 | 类型 | 路径 | 命名 |
 |---|---|---|
-| Layer A patch | `vendor/HolyClaude/vendor/patches/<feature>/00NN-<slug>.patch` | 4 位序号 + kebab-case;按字典序即应用顺序 |
-| Layer A overlay README | `vendor/HolyClaude/vendor/patches/<feature>/README.md` | 说明 upstream commit、issue 链接、**移除条件** |
-| Layer B 脚本 | `vendor/HolyClaude/scripts/patch-cloudcli-<feature>.mjs` | 一律 `patch-cloudcli-` 前缀,ESM(`import`),`.mjs` |
-| 检测器(可选) | `vendor/HolyClaude/scripts/verify-cloudcli-<feature>-support.mjs` | 配套状态机 + 移除条件 |
-| 产物 | `vendor/HolyClaude/vendor/artifacts/` | tgz + `<feature>.manifest.json` 成对入库 |
+| Layer A patch | `patches/source/<feature>/00NN-<slug>.patch` | 4 位序号 + kebab-case;按字典序即应用顺序 |
+| Layer A overlay README | `patches/source/<feature>/README.md` | 说明 upstream commit、issue 链接、**移除条件** |
+| Layer A 构建脚本 + 检测器 | `scripts/build-cloudcli-<feature>-artifact*.mjs`、`scripts/verify-cloudcli-<feature>-support.mjs` | 镜像 HolyClaude 的 account-management 构建脚本结构 |
+| Layer B 脚本 | `patches/patch-cloudcli-<feature>.mjs` | 一律 `patch-cloudcli-` 前缀,ESM(`import`),`.mjs`;由 `scripts/apply-cloudcli-patches.sh` 按字典序执行 |
+| 产物 | `patches/source/artifacts/` | tgz + `<feature>.manifest.json` 成对入库 |
 
 > 本项目若把 HolyClaude 作为 git 子目录/子模块引入,新增补丁应放在 **与 HolyClaude 同级或之上的自有目录**(例如 `patches/`、`scripts/`),通过扩展的 Dockerfile `COPY` 进来,**避免直接修改 vendor/HolyClaude 源码**(便于跟踪上游)。
 
@@ -419,8 +432,10 @@ RUN TARGET="/usr/local/lib/node_modules/@cloudcli-ai/cloudcli/dist-server/server
 - [ ] 走完整 `npm ci → typecheck → build → lint → shrinkwrap` 链。
 - [ ] **双重 pack + 双重 install** 一致性校验,差异即 `throw`。
 - [ ] 刷新 `manifest.json`:记录 upstream/build/artifact/patches 的全部 `sha256`,以及 **`removal` 条款**。
-- [ ] tgz 与 manifest 成对 commit 进 `vendor/artifacts/`。
-- [ ] 写配套 `verify-cloudcli-<feature>-support.mjs`,Dockerfile 末尾跑它,`ok !== true` 即构建失败。
+- [ ] tgz 与 manifest 成对 commit 进 `patches/source/artifacts/`。
+- [ ] **若改了 `package-lock.json`,且链式应用了别的 overlay 的锁补丁**(如 HolyClaude 的 `0002-node26`):生成自己的锁 diff 时**必须先应用前者的锁补丁**再 `npm install --package-lock-only`,否则锁文件 context 对不上、构建时 `git apply` 会失败。
+- [ ] **选定安装策略(§7.1.1)**:只改前端 → dist-only 覆盖(只解出 `package/dist`,**不** `npm i -g`,跳过重新应用运行时补丁);改了服务端 → 整包重装 + 重新应用 7 个运行时补丁。
+- [ ] 写配套 `verify-cloudcli-<feature>-support.mjs`。Layer A 的检测器标记**必须用字符串字面量**(§4.2 C6 —— `dist/assets/*.js` 经 esbuild 压缩,JS 注释会丢)。Dockerfile 末尾跑它,`ok !== true` 即构建失败。
 
 ### 7.6 升级 CloudCLI 时的流程
 

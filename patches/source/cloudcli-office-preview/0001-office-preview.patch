@@ -1,0 +1,169 @@
+diff --git a/src/components/code-editor/utils/binaryFile.ts b/src/components/code-editor/utils/binaryFile.ts
+index f03205c..118e4aa 100644
+--- a/src/components/code-editor/utils/binaryFile.ts
++++ b/src/components/code-editor/utils/binaryFile.ts
+@@ -6,8 +6,8 @@ const BINARY_EXTENSIONS = [
+   'exe', 'dll', 'so', 'dylib', 'app', 'dmg', 'msi',
+   // Media
+   'mp3', 'mp4', 'wav', 'avi', 'mov', 'mkv', 'flv', 'wmv', 'm4a', 'ogg',
+-  // Documents
+-  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp',
++  // Documents (office docs are previewed via OfficePreview; see previewableFile.ts)
++  'pdf',
+   // Fonts
+   'ttf', 'otf', 'woff', 'woff2', 'eot',
+   // Database
+diff --git a/src/components/code-editor/utils/previewableFile.ts b/src/components/code-editor/utils/previewableFile.ts
+index 0071de4..248848a 100644
+--- a/src/components/code-editor/utils/previewableFile.ts
++++ b/src/components/code-editor/utils/previewableFile.ts
+@@ -3,7 +3,7 @@
+ // preview instead of the generic "binary file" placeholder. Anything not listed
+ // here (zip, exe, avi, mkv, fonts, ...) falls through to the binary message.
+ 
+-export type PreviewKind = 'image' | 'pdf' | 'video' | 'audio';
++export type PreviewKind = 'image' | 'pdf' | 'video' | 'audio' | 'office';
+ 
+ // Single source of truth: every extension the browser can preview, mapped to the
+ // MIME type we apply when the server response has a missing/generic Content-Type.
+@@ -40,6 +40,16 @@ const EXTENSION_MIME: Record<string, string> = {
+   oga: 'audio/ogg',
+   ogg: 'audio/ogg',
+   weba: 'audio/webm',
++  // Office documents — rendered by the AgentMate office preview bridge (@open-file-viewer).
++  doc: 'application/msword',
++  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
++  xls: 'application/vnd.ms-excel',
++  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
++  ppt: 'application/vnd.ms-powerpoint',
++  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
++  odt: 'application/vnd.oasis.opendocument.text',
++  ods: 'application/vnd.oasis.opendocument.spreadsheet',
++  odp: 'application/vnd.oasis.opendocument.presentation',
+ };
+ 
+ const extensionOf = (filename: string): string => filename.split('.').pop()?.toLowerCase() ?? '';
+@@ -49,6 +59,14 @@ const kindForMime = (mime: string): PreviewKind | null => {
+   if (mime.startsWith('image/')) return 'image';
+   if (mime.startsWith('video/')) return 'video';
+   if (mime.startsWith('audio/')) return 'audio';
++  // Office document families (legacy MS, OOXML, ODF) — rendered by OfficePreview.
++  if (
++    mime.startsWith('application/vnd.openxmlformats-officedocument') ||
++    mime.startsWith('application/vnd.ms-') ||
++    mime.startsWith('application/vnd.oasis.opendocument')
++  ) {
++    return 'office';
++  }
+   return null;
+ };
+ 
+diff --git a/src/components/code-editor/view/subcomponents/CodeEditorMediaPreview.tsx b/src/components/code-editor/view/subcomponents/CodeEditorMediaPreview.tsx
+index 62cdbab..c5df379 100644
+--- a/src/components/code-editor/view/subcomponents/CodeEditorMediaPreview.tsx
++++ b/src/components/code-editor/view/subcomponents/CodeEditorMediaPreview.tsx
+@@ -1,9 +1,14 @@
+-import { useEffect, useState } from 'react';
++import { Suspense, lazy, useEffect, useState } from 'react';
+ 
+ import { authenticatedFetch } from '../../../../utils/api';
+ import type { CodeEditorFile } from '../../types/types';
+ import { getPreviewMimeType, type PreviewKind } from '../../utils/previewableFile';
+ 
++// AgentMate office preview bridge — lazy so @open-file-viewer and its office deps
++// (docx-preview, mammoth, xlsx, @aiden0z/pptx-renderer, ...) are code-split into an
++// async chunk fetched only when an office file is first opened.
++const OfficePreview = lazy(() => import('./OfficePreview'));
++
+ type CodeEditorMediaPreviewProps = {
+   file: CodeEditorFile;
+   kind: PreviewKind;
+@@ -181,6 +186,21 @@ export default function CodeEditorMediaPreview({
+             </audio>
+           </div>
+         );
++      case 'office':
++        // Office docs (docx/xlsx/pptx/...) render via the lazy @open-file-viewer
++        // bridge. The blob URL is already built above; the Suspense fallback covers
++        // the async chunk download on first open.
++        return (
++          <Suspense
++            fallback={
++              <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
++                {labels.loading}
++              </div>
++            }
++          >
++            <OfficePreview url={currentUrl} fileName={file.name} errorLabel={labels.error} />
++          </Suspense>
++        );
+       default:
+         return null;
+     }
+diff --git a/src/components/code-editor/view/subcomponents/OfficePreview.tsx b/src/components/code-editor/view/subcomponents/OfficePreview.tsx
+new file mode 100644
+index 0000000..3aecc41
+--- /dev/null
++++ b/src/components/code-editor/view/subcomponents/OfficePreview.tsx
+@@ -0,0 +1,61 @@
++// AgentMate office preview bridge — renders docx/xlsx/pptx (and the wider office
++// family) inline via @open-file-viewer. This module is loaded through React.lazy()
++// from CodeEditorMediaPreview, so the heavy office dependencies (docx-preview,
++// mammoth, xlsx, @aiden0z/pptx-renderer, jszip, dompurify, ...) are code-split
++// into an async chunk that is fetched only the first time a user opens an office
++// file. Existing text/image/pdf/audio/video handling is untouched.
++// AGENTMATE_OFFICE_PREVIEW_BRIDGE
++import { useMemo, useState } from 'react';
++import { FileViewer } from '@open-file-viewer/react';
++import { officePlugin } from '@open-file-viewer/core';
++import '@open-file-viewer/core/style.css';
++
++type OfficePreviewProps = {
++  // Same-origin blob URL of the office file bytes — built by CodeEditorMediaPreview
++  // from the authenticated /api/projects/:id/files/content response.
++  url: string;
++  // File name; officePlugin dispatches docx/xlsx/pptx/etc. by its extension.
++  fileName: string;
++  errorLabel: string;
++};
++
++function detectLocale(): 'zh-CN' | 'en-US' {
++  if (typeof navigator !== 'undefined' && navigator.language?.toLowerCase().startsWith('zh')) {
++    return 'zh-CN';
++  }
++  return 'en-US';
++}
++
++export default function OfficePreview({ url, fileName, errorLabel }: OfficePreviewProps) {
++  // officePlugin() returns a new plugin instance per call. Memoize so FileViewer's
++  // mount effect does not tear down and rebuild the viewer on every parent render.
++  const plugins = useMemo(() => [officePlugin()], []);
++  const locale = useMemo(detectLocale, []);
++  const [failed, setFailed] = useState(false);
++
++  if (failed) {
++    return (
++      <div className="flex h-full w-full flex-col items-center justify-center gap-1 p-8 text-center text-muted-foreground">
++        <p className="text-sm">{errorLabel}</p>
++        <p className="break-all text-xs">{fileName}</p>
++      </div>
++    );
++  }
++
++  return (
++    <div className="h-full w-full" data-agentmate-office-preview="">
++      <FileViewer
++        file={url}
++        fileName={fileName}
++        plugins={plugins}
++        locale={locale}
++        theme="auto"
++        toolbar
++        width="100%"
++        height="100%"
++        onError={() => setFailed(true)}
++        onUnsupported={() => setFailed(true)}
++      />
++    </div>
++  );
++}

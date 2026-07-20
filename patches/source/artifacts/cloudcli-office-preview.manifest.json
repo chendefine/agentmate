@@ -1,0 +1,73 @@
+{
+  "bridge": "cloudcli-office-preview",
+  "state": "agentmate-bridge-complete",
+  "upstream": {
+    "repository": "https://github.com/siteboon/claudecodeui.git",
+    "commit": "615e2ca2926a68e6e3336d49b592616654a69424",
+    "package": "@cloudcli-ai/cloudcli",
+    "version": "1.36.2",
+    "license": "AGPL-3.0-or-later"
+  },
+  "build": {
+    "image": "node:26.5.0-bookworm-slim@sha256:2d49d876e96237d76de412761cf05dbfe5aee325cc4406a4d41d5824c5bb8beb",
+    "node": "v26.5.0",
+    "npm": "11.17.0",
+    "commands": [
+      "npm ci",
+      "npm run typecheck",
+      "npm run build",
+      "npm run lint",
+      "npm shrinkwrap --omit=dev",
+      "npm pack (twice)",
+      "npm install -g (twice)"
+    ],
+    "generatedAt": "2026-07-21T00:00:00Z",
+    "sourceDateNote": "Timestamp is fixed in this manifest so reproducibility checks compare stable fields.",
+    "sourceTreeSha256": "5787e769d0ac945c7086de802361f37842fb89378027f02a60beae5312d93734"
+  },
+  "artifact": {
+    "file": "cloudcli-ai-cloudcli-1.36.2-agentmate-office-preview.tgz",
+    "sha256": "acbc3127a6627d22b384f7c580f6d61ab1421b8d9b6e372d4a792849233c7448",
+    "size": 5154826,
+    "packageFileListSha256": "4f50601e03ec5a9899f791a16a7fd1079b24e5d814f2ef35918ef7f727b130c0",
+    "shrinkwrapSha256": "8239175339a14d72c2619eec976521a6dc9eb0fc72217abcd03ffe22b15bf487",
+    "productionDependencyTreeSha256": "ab9386e25f0e90449f09689d99630186ba4f030773380e2e75c4746cabd17b99",
+    "duplicatePackSha256": "acbc3127a6627d22b384f7c580f6d61ab1421b8d9b6e372d4a792849233c7448"
+  },
+  "patches": [
+    {
+      "origin": "holyclaude",
+      "file": "vendor/HolyClaude/vendor/patches/cloudcli-account-management/0001-local-account-management.patch",
+      "sha256": "b0c2c2ff026654e8c40e312a1f49a27ee63ab1169ad25e71a500ad9617360722"
+    },
+    {
+      "origin": "holyclaude",
+      "file": "vendor/HolyClaude/vendor/patches/cloudcli-account-management/0002-node26-better-sqlite3-lock.patch",
+      "sha256": "e09d1139d0a9f54905027ea45a615694f2d58cd00d8cac1307231c4018d5d9fa"
+    },
+    {
+      "origin": "agentmate",
+      "file": "patches/source/cloudcli-office-preview/0001-office-preview.patch",
+      "sha256": "45b53a50bcf73d4e67516807b61ac3169b368d77a6cbb9a7c6fb06fabf3f67eb"
+    },
+    {
+      "origin": "agentmate",
+      "file": "patches/source/cloudcli-office-preview/0002-office-preview-deps.patch",
+      "sha256": "405e879bdadfc15d4edce16e1113ff7dc435b2be26c4fc42539db1cf7953762e"
+    }
+  ],
+  "installStrategy": {
+    "type": "dist-only-overlay",
+    "reason": "Only dist/ is overlaid onto the installed CloudCLI; dist-server/ is untouched so all seven HolyClaude runtime patches (which write only to dist-server/ or an external plugin dir) keep working with zero re-application."
+  },
+  "verification": {
+    "detector": "scripts/verify-cloudcli-office-preview-support.mjs",
+    "expectedState": "agentmate-bridge-complete",
+    "minificationSafeMarker": "data-agentmate-office-preview"
+  },
+  "upstreamRefs": [
+    "https://github.com/xushanpei/open-file-viewer",
+    "https://www.npmjs.com/package/@open-file-viewer/core"
+  ],
+  "removal": "Remove when CloudCLI ships native docx/xlsx/pptx inline preview (detector reports upstream-complete), or when @open-file-viewer/* is swapped for another renderer. Then delete patches/source/cloudcli-office-preview/, scripts/build-cloudcli-office-preview-*, patches/source/artifacts/cloudcli-*office-preview* + cloudcli-office-preview.manifest.json, and the Dockerfile Layer A stage."
+}
