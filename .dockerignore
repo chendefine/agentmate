@@ -1,0 +1,34 @@
+# Keep the docker build context small. Anything not needed at build time
+# (vendor sources, runtime data, VCS) is excluded.
+
+# VCS
+.git
+.gitignore
+.gitattributes
+
+# Vendored upstream sources — not needed to build the image
+vendor/
+
+# Runtime data / host bind-mount targets (must never be baked into the image)
+data/
+workspace/
+
+# Docs and project metadata that the build doesn't read
+docs/
+*.md
+LICENSE
+
+# Editor / OS noise
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Local env (never bake secrets into an image)
+.env
+.env.*
+!.env.example
+
+# CI / release noise
+.github/
+release.sh

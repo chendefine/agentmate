@@ -7,6 +7,12 @@
 services:
   agentmate:
     image: chendefine/agentmate:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Override CloudCLI install root only if a future base image moves it.
+        CLOUDCLI_ROOT: /usr/local/lib/node_modules/@cloudcli-ai/cloudcli
     container_name: agentmate
     hostname: agentmate
     restart: unless-stopped
