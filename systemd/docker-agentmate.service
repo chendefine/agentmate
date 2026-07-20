@@ -1,0 +1,36 @@
+[Unit]
+Description=holyclaude compose stack (cloudcli web UI)
+Documentation=https://github.com/CoderLuii/HolyClaude/blob/master/docs/configuration.md
+# Hard + ordering dependency on the tproxy network: compose.yaml declares
+# `tproxy` as external, so the network MUST exist before `docker compose up`.
+# (docker-network-tproxy.service also has Before=holyclaude.service — both
+#  directions stated explicitly for clarity.)
+Requires=docker-network-tproxy.service docker.service
+After=docker-network-tproxy.service docker.service
+# Propagate `systemctl restart docker` into a full stack restart.
+PartOf=docker.service
+
+[Service]
+# oneshot + RemainAfterExit: `up` issues the start and returns; the unit then
+# stays "active" so `systemctl stop` triggers ExecStop (`down`).
+#
+# NOTE on crash recovery: because this is a oneshot unit, it does NOT restart
+# the container if the container crashes at runtime. Runtime recovery is left
+# to the container's own `restart: unless-stopped` policy in compose.yaml —
+# which is exactly why we keep that policy alongside this unit.
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/holyclaude
+
+# -d: detach. --wait: block until the container is running/healthy, so the
+#     unit only goes "active" once the stack is genuinely up. --remove-orphans:
+#     drop stale containers from a previous run.
+ExecStart=/usr/bin/docker compose up -d --wait --remove-orphans
+ExecStop=/usr/bin/docker compose down
+
+# Allow a slow first-run image pull / health wait (default 90s is too tight
+# for a fresh `docker compose up` that has to download the image).
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

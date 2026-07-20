@@ -1,0 +1,29 @@
+[Unit]
+Description=tproxy docker network -> host v2ray TPROXY (172.31.255.0/24)
+# Hard dependency: the network + iptables rules are meaningless without dockerd.
+Requires=docker.service
+# Ordering: wait for the daemon (and its socket / basic networking) first.
+After=docker.service docker.socket network-online.target
+# Propagate `systemctl stop/restart docker` so the network is torn down and
+# rebuilt in lockstep with the daemon instead of going stale.
+PartOf=docker.service
+# If your app stack is brought up by its own unit (e.g. compose-app.service),
+# add a Before= here so this runs first — the compose file uses the `tproxy`
+# network as external and will fail if it does not yet exist.
+
+[Service]
+# The script is a one-shot configurator (sysctl + docker network + iptables),
+# not a daemon. RemainAfterExit keeps the unit "active" after ExecStart so
+# `systemctl stop` triggers ExecStop.
+Type=oneshot
+RemainAfterExit=yes
+
+# Runs as root (the default) — the script needs CAP_NET_ADMIN for
+# iptables/sysctl and access to /var/run/docker.sock. Do NOT add hardening
+# like PrivateNetwork=/ProtectSystem=/restrictive CapabilityBoundingSet=;
+# they will break iptables, sysctl, and bridge setup.
+ExecStart=/usr/local/bin/docker-network-tproxy.sh start
+ExecStop=/usr/local/bin/docker-network-tproxy.sh stop
+
+[Install]
+WantedBy=multi-user.target

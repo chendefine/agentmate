@@ -1,0 +1,142 @@
+# ==============================================================================
+# AgentMate
+# All options documented inline.
+# Detailed docs: https://github.com/chendefine/agentmate/blob/master/docs/configuration.md
+# ==============================================================================
+
+services:
+  agentmate:
+    image: chendefine/agentmate:latest
+    container_name: agentmate
+    hostname: agentmate
+    restart: unless-stopped
+    shm_size: 2g # Chromium shared memory — increase to 4g for heavy browser use
+    networks:
+      - tproxy
+    cap_add:
+      - SYS_ADMIN # Current browser profile for this release; hardening is separate
+      - SYS_PTRACE # Debugging-related capability (strace, lsof)
+    security_opt:
+      - seccomp=unconfined # Current browser profile for this release; hardening is separate
+    ports:
+      #
+      # CloudCLI web UI — this is the only port you need.
+      # Override the host-side port from `.env` if 3001 is already in use.
+      #
+      - "${HOLYCLAUDE_HOST_PORT:-3001}:3001"
+      #
+      # Dev server ports — uncomment as needed.
+      # These let you access dev servers running inside the container from your host browser.
+      #
+      # - "127.0.0.1:3000:3000"            # Next.js / Express
+      # - "127.0.0.1:4321:4321"            # Astro
+      # - "127.0.0.1:5173:5173"            # Vite
+      # - "127.0.0.1:8787:8787"            # Wrangler (Cloudflare Workers)
+      # - "127.0.0.1:9229:9229"            # Node.js debugger
+      # - "127.0.0.1:1455:1455"            # Codex auth callback port
+      # - "127.0.0.1:2222:22"              # Optional SSH, localhost/VPN only
+      # - "127.0.0.1:60000-60010:60000-60010/udp"  # Optional Mosh UDP range
+    volumes:
+      #
+      # PERSISTENT DATA
+      - ${HOLYCLAUDE_HOST_CLOUDCLI_DIR:-./data/cloudcli}:/home/claude/.cloudcli
+      #
+      # ./data/claude — Settings, credentials, API keys, Claude's memory file.
+      #                  Survives container rebuilds. NEVER delete this folder.
+      #                  Override the host path from `.env` if you want it elsewhere.
+      #
+      - ${HOLYCLAUDE_HOST_CLAUDE_DIR:-./data/claude}:/home/claude/.claude
+      #
+      # ./workspace — Your code and projects. Everything you build goes here.
+      #               Accessible from your host machine.
+      #               Override the host path from `.env` if you want a different root.
+      #
+      - ${HOLYCLAUDE_HOST_WORKSPACE_DIR:-./workspace}:/workspace
+      #
+      # OPTIONAL SSH/MOSH REMOTE SHELL
+      # Keep authorized_keys outside .claude and /workspace. Mount it read-only.
+      #
+      # - ./data/ssh/authorized_keys:/run/holyclaude-ssh/authorized_keys:ro
+      # - holyclaude-ssh:/var/lib/holyclaude-ssh
+    environment:
+      #
+      # TIMEZONE
+      # Full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+      #
+      - TZ=Asia/Shanghai
+      #
+      # PERFORMANCE
+      # Node.js heap memory limit in MB. Increase if you work on large monorepos
+      # and hit out-of-memory errors. 4096 (4GB) is a solid default.
+      #
+      - NODE_OPTIONS=--max-old-space-size=4096
+      #
+      # USER MAPPING
+      # Docker-style UID/GID remapping. Run `id -u` and `id -g` on your host.
+      # Rootless Podman users should use docker-compose.podman-rootless.yaml instead.
+      #
+      - PUID=1001
+      - PGID=984
+      #
+      # SMB/CIFS NETWORK MOUNTS
+      # Only enable these if your volumes are on a NAS, Samba share, or CIFS mount.
+      # They enable polling-based file watching since network mounts don't support inotify.
+      # Leave commented out for local storage — polling uses more CPU.
+      #
+      # - CHOKIDAR_USEPOLLING=1
+      # - WATCHFILES_FORCE_POLLING=true
+      #
+      # NOTIFICATIONS (optional)
+      # Get notified when Claude finishes a task or hits an error.
+      # Uses Apprise — supports 100+ services. Also requires creating a flag file
+      # inside the container: touch ~/.claude/notify-on
+      #
+      # - NOTIFY_DISCORD=discord://webhook_id/webhook_token
+      # - NOTIFY_TELEGRAM=tgram://bot_token/chat_id
+      # - NOTIFY_PUSHOVER=pover://user_key@app_token
+      # - NOTIFY_SLACK=slack://token_a/token_b/token_c
+      # - NOTIFY_EMAIL=mailto://user:pass@gmail.com?to=you@gmail.com
+      # - NOTIFY_GOTIFY=gotify://hostname/token
+      # - NOTIFY_URLS=                                   # catch-all: comma-separated Apprise URLs
+      #
+      # AI PROVIDER KEYS (optional)
+      # Claude Code can authenticate via web UI (OAuth) or ANTHROPIC_API_KEY.
+      # Set these if you want to use additional AI CLIs or API-based auth.
+      #
+      # - GEMINI_API_KEY=your_key
+      # - OPENAI_API_KEY=your_key
+      # - CURSOR_API_KEY=your_key
+      #
+      # WEB UI BASE PATH (optional)
+      # Use only when a reverse proxy mounts HolyClaude below a path.
+      # Example: Tailscale Serve --set-path=/holyclaude
+      # Do not add a trailing slash.
+      #
+      # - HOLYCLAUDE_BASE_PATH=/holyclaude
+      #
+      # CODEX PERMISSION MODES (optional)
+      # CloudCLI Codex chat reads HOLYCLAUDE_CODEX_CHAT_PERMISSION_MODE at runtime.
+      # Raw codex CLI reads HOLYCLAUDE_CODEX_CLI_PERMISSION_MODE only when first creating ~/.codex/config.toml.
+      # Valid values: default, acceptEdits, bypassPermissions. Recommended: acceptEdits.
+      # bypassPermissions gives full access with no approval. Use it only for trusted local workspaces.
+      #
+      # - HOLYCLAUDE_CODEX_CHAT_PERMISSION_MODE=acceptEdits
+      # - HOLYCLAUDE_CODEX_CLI_PERMISSION_MODE=acceptEdits
+      #
+      # SSH/MOSH REMOTE SHELL (optional, disabled by default)
+      # Keep this behind localhost, VPN, Tailscale, or a firewall.
+      #
+      # - HOLYCLAUDE_SSH_ENABLE=false
+      # - HOLYCLAUDE_SSH_AUTHORIZED_KEYS=/run/holyclaude-ssh/authorized_keys
+      # - HOLYCLAUDE_SSH_HOST_KEYS_DIR=/var/lib/holyclaude-ssh/host_keys
+      # - HOLYCLAUDE_MOSH_ENABLE=false
+      # - HOLYCLAUDE_MOSH_UDP_START=60000
+      # - HOLYCLAUDE_MOSH_UDP_END=60010
+
+      # volumes:
+      #   holyclaude-ssh:
+
+networks:
+  tproxy:
+    name: tproxy
+    external: true
