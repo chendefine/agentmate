@@ -1,0 +1,63 @@
+diff --git a/src/components/chat/hooks/useChatMessages.ts b/src/components/chat/hooks/useChatMessages.ts
+index 90157d8..edb3147 100644
+--- a/src/components/chat/hooks/useChatMessages.ts
++++ b/src/components/chat/hooks/useChatMessages.ts
+@@ -143,7 +143,7 @@ export function normalizedToChatMessages(messages: NormalizedMessage[]): ChatMes
+ 
+       case 'tool_use': {
+         const tr = msg.toolResult || (msg.toolId ? toolResultMap.get(msg.toolId) : null);
+-        const isSubagentContainer = msg.toolName === 'Task';
++        const isSubagentContainer = msg.toolName === 'Task' || msg.toolName === 'Agent';
+ 
+         // Build child tools from subagentTools
+         const childTools: SubagentChildTool[] = [];
+diff --git a/src/components/chat/tools/components/SubagentContainer.tsx b/src/components/chat/tools/components/SubagentContainer.tsx
+index 83d3420..9deb987 100644
+--- a/src/components/chat/tools/components/SubagentContainer.tsx
++++ b/src/components/chat/tools/components/SubagentContainer.tsx
+@@ -31,6 +31,7 @@ const getCompactToolDisplay = (toolName: string, toolInput: unknown): string =>
+       const cmd = input.command || '';
+       return cmd.length > 40 ? `${cmd.slice(0, 40)}...` : cmd;
+     case 'Task':
++    case 'Agent':
+       return input.description || input.subagent_type || '';
+     case 'WebFetch':
+     case 'WebSearch':
+@@ -58,7 +59,7 @@ export const SubagentContainer: React.FC<SubagentContainerProps> = ({
+   const title = `Subagent / ${subagentType}: ${description}`;
+ 
+   return (
+-    <div className="my-1 border-l-2 border-l-purple-500 py-0.5 pl-3 dark:border-l-purple-400">
++    <div className="my-1 border-l-2 border-l-purple-500 py-0.5 pl-3 dark:border-l-purple-400" data-agentmate-subagent-folding="">
+       <CollapsibleSection
+         title={title}
+         toolName="Task"
+diff --git a/src/components/chat/tools/configs/toolConfigs.ts b/src/components/chat/tools/configs/toolConfigs.ts
+index 6a34b2c..518e9cd 100644
+--- a/src/components/chat/tools/configs/toolConfigs.ts
++++ b/src/components/chat/tools/configs/toolConfigs.ts
+@@ -553,7 +553,10 @@ export const TOOL_CONFIGS: Record<string, ToolDisplayConfig> = {
+  * Get configuration for a tool, with fallback to default
+  */
+ export function getToolConfig(toolName: string): ToolDisplayConfig {
+-  return TOOL_CONFIGS[toolName] || TOOL_CONFIGS.Default;
++  // AgentMate subagent-folding: upstream renamed the subagent tool Task->Agent;
++  // alias it to the existing Task config so input+result render identically.
++  const key = toolName === 'Agent' ? 'Task' : toolName;
++  return TOOL_CONFIGS[key] || TOOL_CONFIGS.Default;
+ }
+ 
+ /**
+diff --git a/src/components/chat/view/subcomponents/MessageComponent.tsx b/src/components/chat/view/subcomponents/MessageComponent.tsx
+index 61cf8ee..1f819d6 100644
+--- a/src/components/chat/view/subcomponents/MessageComponent.tsx
++++ b/src/components/chat/view/subcomponents/MessageComponent.tsx
+@@ -191,7 +191,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
+                 )}
+ 
+                 {/* Tool Result Section — Bash renders its output inside the command row above. */}
+-                {message.toolResult && message.toolName !== 'Bash' && !shouldHideToolResult(message.toolName || 'UnknownTool', message.toolResult) && (
++                {message.toolResult && message.toolName !== 'Bash' && !message.isSubagentContainer && !shouldHideToolResult(message.toolName || 'UnknownTool', message.toolResult) && (
+                   message.toolResult.isError ? (
+                     // Error results - red error box with content
+                     <div

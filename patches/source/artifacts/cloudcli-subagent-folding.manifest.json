@@ -1,0 +1,84 @@
+{
+  "bridge": "cloudcli-subagent-folding",
+  "state": "agentmate-bridge-complete",
+  "upstream": {
+    "repository": "https://github.com/siteboon/claudecodeui.git",
+    "commit": "615e2ca2926a68e6e3336d49b592616654a69424",
+    "package": "@cloudcli-ai/cloudcli",
+    "version": "1.36.2",
+    "license": "AGPL-3.0-or-later"
+  },
+  "build": {
+    "image": "node:26.5.0-bookworm-slim@sha256:2d49d876e96237d76de412761cf05dbfe5aee325cc4406a4d41d5824c5bb8beb",
+    "node": "v26.5.0",
+    "npm": "11.17.0",
+    "commands": [
+      "npm ci",
+      "npm run typecheck",
+      "npm run build",
+      "npm run lint",
+      "npm shrinkwrap --omit=dev",
+      "npm pack (twice)",
+      "npm install -g (twice)"
+    ],
+    "generatedAt": "2026-07-21T00:00:00Z",
+    "sourceDateNote": "Timestamp is fixed in this manifest so reproducibility checks compare stable fields.",
+    "sourceTreeSha256": "64bc99fc35ba38385b48ae1bc133a063bfac21a9e37cd399a95b80c033f1e7fe"
+  },
+  "artifact": {
+    "file": "cloudcli-ai-cloudcli-1.36.2-agentmate-subagent-folding.tgz",
+    "sha256": "fc2475832189f5a9eebbe9a5894df57d3ef2d33cdad3ac8f0aa5a8371ed688cc",
+    "size": 5154948,
+    "packageFileListSha256": "2df48038c42115ca398a2dfa332fb016b6cb264e2853434d30abeae0f8cfe4c1",
+    "shrinkwrapSha256": "8239175339a14d72c2619eec976521a6dc9eb0fc72217abcd03ffe22b15bf487",
+    "productionDependencyTreeSha256": "81c4a3c92b7f1efe0a58d15bbcd6d7d3c9ea8568ae2fb1a2f2ffc2880d85eced",
+    "duplicatePackSha256": "fc2475832189f5a9eebbe9a5894df57d3ef2d33cdad3ac8f0aa5a8371ed688cc"
+  },
+  "patches": [
+    {
+      "origin": "holyclaude",
+      "file": "vendor/HolyClaude/vendor/patches/cloudcli-account-management/0001-local-account-management.patch",
+      "sha256": "b0c2c2ff026654e8c40e312a1f49a27ee63ab1169ad25e71a500ad9617360722"
+    },
+    {
+      "origin": "holyclaude",
+      "file": "vendor/HolyClaude/vendor/patches/cloudcli-account-management/0002-node26-better-sqlite3-lock.patch",
+      "sha256": "e09d1139d0a9f54905027ea45a615694f2d58cd00d8cac1307231c4018d5d9fa"
+    },
+    {
+      "origin": "agentmate-office-preview",
+      "file": "patches/source/cloudcli-office-preview/0001-office-preview.patch",
+      "sha256": "45b53a50bcf73d4e67516807b61ac3169b368d77a6cbb9a7c6fb06fabf3f67eb"
+    },
+    {
+      "origin": "agentmate-office-preview",
+      "file": "patches/source/cloudcli-office-preview/0002-office-preview-deps.patch",
+      "sha256": "405e879bdadfc15d4edce16e1113ff7dc435b2be26c4fc42539db1cf7953762e"
+    },
+    {
+      "origin": "agentmate-subagent-folding",
+      "file": "patches/source/cloudcli-subagent-folding/0001-subagent-tool-name.patch",
+      "sha256": "2b6e9db681bbd18ee12074da5a3e2189ed5a64db44bf5549758d5eddaf1b66d8"
+    },
+    {
+      "origin": "agentmate-subagent-folding",
+      "file": "patches/source/cloudcli-subagent-folding/0002-subagent-result-folding.patch",
+      "sha256": "8a2f3923fa0c39dba9f41e15197167fcb6b81f4b01923a42d5d28c7c4eaae6bc"
+    }
+  ],
+  "installStrategy": {
+    "type": "dist-only-overlay",
+    "reason": "Only dist/ is overlaid onto the installed CloudCLI; dist-server/ is untouched so all seven HolyClaude runtime patches keep working with zero re-application. This cumulative tgz supersedes the office-preview-only tgz in the Dockerfile: its dist/ carries both office-preview and the subagent-folding frontend fix. The backend half of subagent-folding (subagents/ path migration) is applied separately as Layer B (patches/patch-cloudcli-subagent-path.mjs) since dist-server/ is not overlaid here."
+  },
+  "verification": {
+    "detector": "scripts/verify-cloudcli-subagent-folding-support.mjs",
+    "expectedState": "agentmate-bridge-complete",
+    "minificationSafeMarker": "data-agentmate-subagent-folding"
+  },
+  "upstreamRefs": [
+    "Chained overlay: patches/source/cloudcli-office-preview/ (docx/xlsx/pptx preview)",
+    "Chained overlay: vendor/HolyClaude/vendor/patches/cloudcli-account-management/ (local accounts)",
+    "Backend half: patches/patch-cloudcli-subagent-path.mjs (Layer B, subagents/ path migration)"
+  ],
+  "removal": "Remove when upstream CloudCLI (a) recognizes the Agent tool name for subagent containers in the frontend AND (b) claude-sessions.provider natively reads <session-id>/subagents/ transcripts. Then delete patches/source/cloudcli-subagent-folding/, scripts/build-cloudcli-subagent-folding-*, patches/source/artifacts/cloudcli-*subagent-folding* + cloudcli-subagent-folding.manifest.json, patches/patch-cloudcli-subagent-path.mjs, and revert the Dockerfile Layer A stage back to the office-preview tgz (this cumulative tgz is the only consumer of the office-preview patch dir besides doc 001)."
+}

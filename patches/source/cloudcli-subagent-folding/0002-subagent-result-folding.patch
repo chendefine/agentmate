@@ -1,0 +1,143 @@
+diff --git a/src/components/chat/hooks/useChatMessages.ts b/src/components/chat/hooks/useChatMessages.ts
+index edb3147..4e8eb33 100644
+--- a/src/components/chat/hooks/useChatMessages.ts
++++ b/src/components/chat/hooks/useChatMessages.ts
+@@ -17,6 +17,7 @@ type ParsedTaskNotification = {
+   status: string;
+   summary: string;
+   result: string;
++  toolUseId?: string;
+ };
+ 
+ /**
+@@ -36,6 +37,7 @@ function parseTaskNotification(content: string): ParsedTaskNotification | null {
+ 
+   const statusMatch = /<status>([\s\S]*?)<\/status>/.exec(content);
+   const summaryMatch = /<summary>([\s\S]*?)<\/summary>/.exec(content);
++  const toolUseIdMatch = /<tool-use-id>([\s\S]*?)<\/tool-use-id>/.exec(content);
+ 
+   let result = '';
+   const resultOpen = content.indexOf('<result>');
+@@ -52,6 +54,7 @@ function parseTaskNotification(content: string): ParsedTaskNotification | null {
+     status: statusMatch?.[1]?.trim() || 'completed',
+     summary: summaryMatch?.[1]?.trim() || 'Background task finished',
+     result,
++    toolUseId: toolUseIdMatch?.[1]?.trim() || undefined,
+   };
+ }
+ 
+@@ -79,6 +82,31 @@ export function normalizedToChatMessages(messages: NormalizedMessage[]): ChatMes
+     }
+   }
+ 
++  // AgentMate subagent-folding: collect async <task-notification> results keyed
++  // by their parent Agent toolUseId, so each subagent's real result can be folded
++  // back into its SubagentContainer instead of leaking into the main conversation.
++  // Only notifications whose parent Agent tool_use is in the loaded set are folded;
++  // orphans (e.g. parent across a pagination boundary) still render standalone.
++  const subagentToolIds = new Set<string>();
++  for (const msg of messages) {
++    if (
++      msg.kind === 'tool_use'
++      && (msg.toolName === 'Task' || msg.toolName === 'Agent')
++      && msg.toolId
++    ) {
++      subagentToolIds.add(msg.toolId);
++    }
++  }
++  const taskNotificationsByToolId = new Map<string, ParsedTaskNotification>();
++  for (const msg of messages) {
++    if (msg.kind === 'text' && msg.role === 'user' && msg.content) {
++      const taskNotif = parseTaskNotification(msg.content);
++      if (taskNotif?.toolUseId && subagentToolIds.has(taskNotif.toolUseId)) {
++        taskNotificationsByToolId.set(taskNotif.toolUseId, taskNotif);
++      }
++    }
++  }
++
+   for (const msg of messages) {
+     const sharedMetadata = {
+       displayText: msg.displayText,
+@@ -100,23 +128,33 @@ export function normalizedToChatMessages(messages: NormalizedMessage[]): ChatMes
+           // Parse task notifications
+           const taskNotif = parseTaskNotification(content);
+           if (taskNotif) {
+-            converted.push({
+-              type: 'assistant',
+-              content: taskNotif.summary,
+-              timestamp: msg.timestamp,
+-              isTaskNotification: true,
+-              taskStatus: taskNotif.status,
+-              ...sharedMetadata,
+-            });
+-            // Render the agent's result as a normal assistant message so its
+-            // markdown displays correctly instead of leaking raw XML.
+-            if (taskNotif.result) {
++            // AgentMate subagent-folding: if this notification's parent Agent
++            // container is in the loaded set, its result has been folded into
++            // that container above — skip the standalone notification + result
++            // messages so the subagent's output is not duplicated in the main
++            // conversation. Orphan notifications still render as below.
++            const folded = taskNotif.toolUseId
++              ? taskNotificationsByToolId.has(taskNotif.toolUseId)
++              : false;
++            if (!folded) {
+               converted.push({
+                 type: 'assistant',
+-                content: formatUsageLimitText(unescapeWithMathProtection(decodeHtmlEntities(taskNotif.result))),
++                content: taskNotif.summary,
+                 timestamp: msg.timestamp,
++                isTaskNotification: true,
++                taskStatus: taskNotif.status,
+                 ...sharedMetadata,
+               });
++              // Render the agent's result as a normal assistant message so its
++              // markdown displays correctly instead of leaking raw XML.
++              if (taskNotif.result) {
++                converted.push({
++                  type: 'assistant',
++                  content: formatUsageLimitText(unescapeWithMathProtection(decodeHtmlEntities(taskNotif.result))),
++                  timestamp: msg.timestamp,
++                  ...sharedMetadata,
++                });
++              }
+             }
+           } else {
+             converted.push({
+@@ -167,6 +205,20 @@ export function normalizedToChatMessages(messages: NormalizedMessage[]): ChatMes
+             }
+           : null;
+ 
++        // AgentMate subagent-folding: async subagents return immediately with an
++        // "Async agent launched" ack; the real result arrives later via a
++        // <task-notification>. Prefer that result inside the container.
++        const asyncNotif = isSubagentContainer && msg.toolId
++          ? taskNotificationsByToolId.get(msg.toolId)
++          : undefined;
++        const subagentResult = asyncNotif
++          ? {
++              content: asyncNotif.result || '',
++              isError: asyncNotif.status === 'failed' || asyncNotif.status === 'error',
++              toolUseResult: toolResult?.toolUseResult,
++            }
++          : toolResult;
++
+         converted.push({
+           type: 'assistant',
+           content: '',
+@@ -175,13 +227,13 @@ export function normalizedToChatMessages(messages: NormalizedMessage[]): ChatMes
+           toolName: msg.toolName,
+           toolInput: typeof msg.toolInput === 'string' ? msg.toolInput : JSON.stringify(msg.toolInput ?? '', null, 2),
+           toolId: msg.toolId,
+-          toolResult,
++          toolResult: subagentResult,
+           isSubagentContainer,
+           subagentState: isSubagentContainer
+             ? {
+                 childTools,
+                 currentToolIndex: childTools.length > 0 ? childTools.length - 1 : -1,
+-                isComplete: Boolean(toolResult),
++                isComplete: Boolean(subagentResult),
+               }
+             : undefined,
+           ...sharedMetadata,

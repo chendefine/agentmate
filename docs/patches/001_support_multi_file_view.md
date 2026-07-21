@@ -18,6 +18,8 @@
 
 > 为什么固定到 `615e2ca2` / 1.36.2:与基础镜像里已安装的 CloudCLI 版本严格对齐,保证重建出的前端 bundle 与基础镜像里未替换的 `dist-server/`(后端 + HolyClaude 运行时补丁)版本一致,避免前后端版本错配。
 
+> **注(002 起)**:自 [`002_fix_subagent_folding.md`](002_fix_subagent_folding.md) 起,Dockerfile Layer A 阶段改用**累积 tgz**(HolyClaude + office-preview + subagent-folding 链式构建),其 `dist/` 同时含 office-preview 与子 agent 折叠修复。本目录的 `0001/0002` patch 仍被链式构建引用,但本 overlay 单独的 tgz(`cloudcli-*office-preview*.tgz`)不再被 Dockerfile 直接 COPY(保留作可构建参考)。
+
 ---
 
 ## 2. 原始代码中存在的问题
