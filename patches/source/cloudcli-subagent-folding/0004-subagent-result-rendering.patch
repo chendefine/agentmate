@@ -1,0 +1,52 @@
+diff --git a/src/components/chat/hooks/useChatMessages.ts b/src/components/chat/hooks/useChatMessages.ts
+index 23fc173..8badbac 100644
+--- a/src/components/chat/hooks/useChatMessages.ts
++++ b/src/components/chat/hooks/useChatMessages.ts
+@@ -274,12 +274,15 @@ export function normalizedToChatMessages(messages: NormalizedMessage[]): ChatMes
+         // inside the fold instead of leaking into the main conversation.
+         const subagentResult = asyncNotif
+           ? {
+-              content: asyncNotif.result || '',
++              // AgentMate subagent-folding (0004): decode entities + unescape to
++              // match the standalone task-notification / assistant-text paths, so
++              // the folded result renders via <Markdown> without literal &lt; etc.
++              content: formatUsageLimitText(unescapeWithMathProtection(decodeHtmlEntities(asyncNotif.result || ''))),
+               isError: asyncNotif.status === 'failed' || asyncNotif.status === 'error',
+               toolUseResult: toolResult?.toolUseResult,
+             }
+           : (liveResult
+-              ? { content: liveResult, isError: false, toolUseResult: toolResult?.toolUseResult }
++              ? { content: formatUsageLimitText(unescapeWithMathProtection(decodeHtmlEntities(liveResult))), isError: false, toolUseResult: toolResult?.toolUseResult }
+               : toolResult);
+ 
+         converted.push({
+diff --git a/src/components/chat/tools/components/SubagentContainer.tsx b/src/components/chat/tools/components/SubagentContainer.tsx
+index 9deb987..b24b529 100644
+--- a/src/components/chat/tools/components/SubagentContainer.tsx
++++ b/src/components/chat/tools/components/SubagentContainer.tsx
+@@ -2,6 +2,10 @@ import React from 'react';
+ import type { SubagentChildTool } from '../../types/types';
+ import { CollapsibleSection } from './CollapsibleSection';
+ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '../../../../shared/view/ui';
++// AgentMate subagent-folding (0004): render the folded final result through the
++// same <Markdown> the main conversation uses, so HTML entities are decoded and
++// markdown formatting renders (instead of a raw, line-clamped text child).
++import { Markdown } from '../../view/subcomponents/Markdown';
+ 
+ interface SubagentContainerProps {
+   toolInput: unknown;
+@@ -167,11 +171,11 @@ export const SubagentContainer: React.FC<SubagentContainerProps> = ({
+               }
+ 
+               return typeof content === 'string' ? (
+-                <div className="line-clamp-6 whitespace-pre-wrap break-words">
++                <Markdown className="break-words">
+                   {content}
+-                </div>
++                </Markdown>
+               ) : content ? (
+-                <pre className="line-clamp-6 whitespace-pre-wrap break-words font-mono text-[11px]">
++                <pre className="whitespace-pre-wrap break-words font-mono text-[11px]">
+                   {JSON.stringify(content, null, 2)}
+                 </pre>
+               ) : null;

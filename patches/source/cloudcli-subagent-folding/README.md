@@ -61,6 +61,18 @@ CloudCLI 在 commit `0207a1f` 引入「子 agent 折叠容器」:派生子 agent
 - `tool_use` 分支:`childTools` = 后端 `subagentTools`(0001)∪ 实时 childTools(0003),按 toolId 去重;`result` = 异步通知(0002)→ 实时最终文本(0003)→ ack 兜底;
 - 主循环顶部守卫 `if (msg.parentToolUseId && subagentToolIds.has(...)) continue;` 抑制子 agent 事件独立渲染(孤儿回退独立渲染)。
 
+### 3.2.3 最终输出渲染质量(`0004-subagent-result-rendering.patch`,`useChatMessages.ts` + `SubagentContainer.tsx`)
+
+0001–0003 把子 agent 最终输出正确折叠进了容器,但折叠进来的文本本身有两处渲染缺陷:**长文本后半段被 `line-clamp-6` 截断**、**正常文本里出现字面 `&lt;` 等实体**。根因有二(详见 [`docs/patches/002_fix_subagent_folding.md`](../../../docs/patches/002_fix_subagent_folding.md) §4.4):
+- **数据层**:0002/0003 把 `subagentResult.content`(`asyncNotif.result` / `liveResult`)**原样塞入**,跳过了主对话文本路径(`:116` standalone task-notification、`:131` assistant、`:124` user、`:196` thinking)都走的 `decodeHtmlEntities`/`unescapeWithMathProtection`/`formatUsageLimitText` 解码管线。
+- **渲染层**:`ToolRenderer.tsx:113-122` 把 `isSubagentContainer` 短路进 `SubagentContainer` 且 result 模式 `return null`,导致 Task 的 `contentType:'markdown'` 配置永远到不了 `MarkdownContent`;`SubagentContainer.tsx` 改用纯 JSX 文本 `{content}`(React 不解码实体)+ 硬 `line-clamp-6`。
+
+本补丁(应用在 0001→0002→0003 之后的最终态,构建脚本按 sorted glob 自动最后应用,**无需改构建脚本**):
+- **数据层** `useChatMessages.ts`:两条 `content:`(`asyncNotif.result || ''` 与 `liveResult`)各套 `formatUsageLimitText(unescapeWithMathProtection(decodeHtmlEntities(...)))`,与 `:116` 对齐。三个函数文件已 import。
+- **渲染层** `SubagentContainer.tsx`:import `Markdown`(`../../view/subcomponents/Markdown`);字符串结果由 `<div className="line-clamp-6 ...">{content}</div>` 改为 `<Markdown className="break-words">{content}</Markdown>`(commonmark 解码实体 + 渲染 markdown 格式,与主对话 assistant 文本一致);`<pre>` 回退仅去掉 `line-clamp-6`。
+- **不改动**:`ToolRenderer` 短路逻辑、prompt 块 `line-clamp-4`、`MessageComponent` 的 `!isSubagentContainer` 守卫。
+
+
 ### 3.3 后端改动(Layer B,`patches/patch-cloudcli-subagent-path.mjs`)
 
 patch 已安装的 `dist-server/server/modules/providers/list/claude/claude-sessions.provider.js` 的 `getSessionMessages()`:
@@ -81,7 +93,7 @@ patch 已安装的 `dist-server/server/modules/providers/list/claude/claude-sess
 
 | 环节 | 文件 | 说明 |
 |---|---|---|
-| overlay 目录 | `patches/source/cloudcli-subagent-folding/` | `0001-subagent-tool-name.patch`、`0002-subagent-result-folding.patch`、`0003-subagent-live-folding.patch`、`README.md`(本文件) |
+| overlay 目录 | `patches/source/cloudcli-subagent-folding/` | `0001-subagent-tool-name.patch`、`0002-subagent-result-folding.patch`、`0003-subagent-live-folding.patch`、`0004-subagent-result-rendering.patch`、`README.md`(本文件) |
 | 构建脚本 | `scripts/build-cloudcli-subagent-folding-artifact.mjs` + `-container.mjs` | 镜像 office-preview 构建;固定 `node:26.5.0-bookworm-slim@sha256:2d49d876…`、Node v26.5.0、npm 11.17.0;**链式 patch(HolyClaude → office-preview → subagent-folding)**;`npm ci → typecheck → build → lint → shrinkwrap`;双 pack sha256 + 双 install 依赖树 sha256 必须一致 |
 | 产物 | `patches/source/artifacts/cloudcli-ai-cloudcli-1.36.2-agentmate-subagent-folding.tgz` + `cloudcli-subagent-folding.manifest.json` | 累积 tgz(dist/ 含 office + subagent 前端改动)+ manifest 成对入库 |
 | 前端检测器 | `scripts/verify-cloudcli-subagent-folding-support.mjs` | 标记 = `data-agentmate-subagent-folding`;`state=agentmate-bridge-complete` 时 ok |

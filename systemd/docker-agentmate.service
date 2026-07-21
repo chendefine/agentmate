@@ -1,9 +1,9 @@
 [Unit]
-Description=holyclaude compose stack (cloudcli web UI)
-Documentation=https://github.com/CoderLuii/HolyClaude/blob/master/docs/configuration.md
+Description=agentmate compose stack (cloudcli web UI)
+Documentation=https://github.com/chendefine/agentmate/blob/master/docs/configuration.md
 # Hard + ordering dependency on the tproxy network: compose.yaml declares
 # `tproxy` as external, so the network MUST exist before `docker compose up`.
-# (docker-network-tproxy.service also has Before=holyclaude.service — both
+# (docker-network-tproxy.service also has Before=agentmate.service — both
 #  directions stated explicitly for clarity.)
 Requires=docker-network-tproxy.service docker.service
 After=docker-network-tproxy.service docker.service
@@ -20,12 +20,12 @@ PartOf=docker.service
 # which is exactly why we keep that policy alongside this unit.
 Type=oneshot
 RemainAfterExit=yes
-WorkingDirectory=/opt/holyclaude
+WorkingDirectory=/opt/agentmate
 
 # -d: detach. --wait: block until the container is running/healthy, so the
 #     unit only goes "active" once the stack is genuinely up. --remove-orphans:
 #     drop stale containers from a previous run.
-ExecStart=/usr/bin/docker compose up -d --wait --remove-orphans
+ExecStart=/usr/bin/docker compose up -d --wait --remove-orphans --force-recreate
 ExecStop=/usr/bin/docker compose down
 
 # Allow a slow first-run image pull / health wait (default 90s is too tight

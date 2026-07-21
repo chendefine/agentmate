@@ -52,6 +52,11 @@ services:
       #                  Override the host path from `.env` if you want it elsewhere.
       #
       - ${HOLYCLAUDE_HOST_CLAUDE_DIR:-./data/claude}:/home/claude/.claude
+      # ./data/agents — AgentMate agent definitions, prompts, and tools.
+      #                  Survives container rebuilds. NEVER delete this folder.
+      #                  Override the host path from `.env` if you want it elsewhere.
+      #
+      - ${HOLYCLAUDE_HOST_AGENTS_DIR:-./data/agents}:/home/claude/.agents
       #
       # ./workspace — Your code and projects. Everything you build goes here.
       #               Accessible from your host machine.
@@ -64,6 +69,9 @@ services:
       #
       # - ./data/ssh/authorized_keys:/run/holyclaude-ssh/authorized_keys:ro
       # - holyclaude-ssh:/var/lib/holyclaude-ssh
+      # OPTIONAL BINARY TOOLS
+      # Mount any CLI tools you want to use inside the container.
+      - ./data/bin/officecli:/usr/local/bin/officecli:ro
     environment:
       #
       # TIMEZONE
