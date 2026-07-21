@@ -32,6 +32,12 @@ const expectedBuildImage = 'node:26.5.0-bookworm-slim@sha256:2d49d876e96237d76de
 const expectedNode = 'v26.5.0';
 const expectedNpm = '11.17.0';
 
+// The web/server build (vite + tsc) does not need the Electron runtime binary,
+// so skip its ~200MB postinstall download. This keeps `npm ci` fast and avoids
+// intermittent stalls on the Electron CDN inside the build container. The
+// produced tgz is unaffected (Electron's binary is never shipped in dist/).
+process.env.ELECTRON_SKIP_BINARY_DOWNLOAD = '1';
+
 const args = new Map();
 for (let index = 2; index < process.argv.length; index += 2) {
   args.set(process.argv[index], process.argv[index + 1]);

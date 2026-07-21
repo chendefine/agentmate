@@ -54,6 +54,13 @@ CloudCLI 在 commit `0207a1f` 引入「子 agent 折叠容器」:派生子 agent
 - `tool_use` 分支用通知的 `<result>` 覆盖容器 result(取代 ack),置 `isComplete`;
 - `text` 分支不再为已折叠的通知产生独立通知/result 消息(父容器跨分页未加载时回退原渲染,不丢结果)。
 
+### 3.2.2 运行时流式归位(`0003-subagent-live-folding.patch`,仅 `useChatMessages.ts`)
+
+运行时子 agent 的中间事件(thinking / text / tool_use / tool_result)经 websocket 实时推到主对话,每条带 `parentToolUseId`,且**不落盘**(历史回看不到)。原前端无分组 → 独立渲染(运行时泄漏)。本补丁:
+- 预扫描按 `parentToolUseId` 把父容器已加载的事件分桶 → `liveChildToolsByParent`(tool_use→childTool,tool_result 回填)+ `liveResultByParent`(最后一条 assistant text = 最终输出);
+- `tool_use` 分支:`childTools` = 后端 `subagentTools`(0001)∪ 实时 childTools(0003),按 toolId 去重;`result` = 异步通知(0002)→ 实时最终文本(0003)→ ack 兜底;
+- 主循环顶部守卫 `if (msg.parentToolUseId && subagentToolIds.has(...)) continue;` 抑制子 agent 事件独立渲染(孤儿回退独立渲染)。
+
 ### 3.3 后端改动(Layer B,`patches/patch-cloudcli-subagent-path.mjs`)
 
 patch 已安装的 `dist-server/server/modules/providers/list/claude/claude-sessions.provider.js` 的 `getSessionMessages()`:
@@ -74,7 +81,7 @@ patch 已安装的 `dist-server/server/modules/providers/list/claude/claude-sess
 
 | 环节 | 文件 | 说明 |
 |---|---|---|
-| overlay 目录 | `patches/source/cloudcli-subagent-folding/` | `0001-subagent-tool-name.patch`、`0002-subagent-result-folding.patch`、`README.md`(本文件) |
+| overlay 目录 | `patches/source/cloudcli-subagent-folding/` | `0001-subagent-tool-name.patch`、`0002-subagent-result-folding.patch`、`0003-subagent-live-folding.patch`、`README.md`(本文件) |
 | 构建脚本 | `scripts/build-cloudcli-subagent-folding-artifact.mjs` + `-container.mjs` | 镜像 office-preview 构建;固定 `node:26.5.0-bookworm-slim@sha256:2d49d876…`、Node v26.5.0、npm 11.17.0;**链式 patch(HolyClaude → office-preview → subagent-folding)**;`npm ci → typecheck → build → lint → shrinkwrap`;双 pack sha256 + 双 install 依赖树 sha256 必须一致 |
 | 产物 | `patches/source/artifacts/cloudcli-ai-cloudcli-1.36.2-agentmate-subagent-folding.tgz` + `cloudcli-subagent-folding.manifest.json` | 累积 tgz(dist/ 含 office + subagent 前端改动)+ manifest 成对入库 |
 | 前端检测器 | `scripts/verify-cloudcli-subagent-folding-support.mjs` | 标记 = `data-agentmate-subagent-folding`;`state=agentmate-bridge-complete` 时 ok |

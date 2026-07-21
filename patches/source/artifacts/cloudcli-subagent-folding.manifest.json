@@ -23,16 +23,16 @@
     ],
     "generatedAt": "2026-07-21T00:00:00Z",
     "sourceDateNote": "Timestamp is fixed in this manifest so reproducibility checks compare stable fields.",
-    "sourceTreeSha256": "64bc99fc35ba38385b48ae1bc133a063bfac21a9e37cd399a95b80c033f1e7fe"
+    "sourceTreeSha256": "1e472ad3a671753d3ba4412688d4a725872c39201d0812d651cd98fd6fe731a7"
   },
   "artifact": {
     "file": "cloudcli-ai-cloudcli-1.36.2-agentmate-subagent-folding.tgz",
-    "sha256": "fc2475832189f5a9eebbe9a5894df57d3ef2d33cdad3ac8f0aa5a8371ed688cc",
-    "size": 5154948,
-    "packageFileListSha256": "2df48038c42115ca398a2dfa332fb016b6cb264e2853434d30abeae0f8cfe4c1",
+    "sha256": "d20902b774c5edda29c3fafc359b8ba1136e430b01eaef3576a59390680f9357",
+    "size": 5155175,
+    "packageFileListSha256": "192acad5f97529c3df08fe6b3cafc5f703915e76f4f1556fc73ca27957afe062",
     "shrinkwrapSha256": "8239175339a14d72c2619eec976521a6dc9eb0fc72217abcd03ffe22b15bf487",
-    "productionDependencyTreeSha256": "81c4a3c92b7f1efe0a58d15bbcd6d7d3c9ea8568ae2fb1a2f2ffc2880d85eced",
-    "duplicatePackSha256": "fc2475832189f5a9eebbe9a5894df57d3ef2d33cdad3ac8f0aa5a8371ed688cc"
+    "productionDependencyTreeSha256": "6fb9eb5950a8855b10ce9e0d54c717dcdb0a1bee12830c8b0f9c1c49d9981267",
+    "duplicatePackSha256": "d20902b774c5edda29c3fafc359b8ba1136e430b01eaef3576a59390680f9357"
   },
   "patches": [
     {
@@ -64,6 +64,11 @@
       "origin": "agentmate-subagent-folding",
       "file": "patches/source/cloudcli-subagent-folding/0002-subagent-result-folding.patch",
       "sha256": "8a2f3923fa0c39dba9f41e15197167fcb6b81f4b01923a42d5d28c7c4eaae6bc"
+    },
+    {
+      "origin": "agentmate-subagent-folding",
+      "file": "patches/source/cloudcli-subagent-folding/0003-subagent-live-folding.patch",
+      "sha256": "e91875579b9e7721927504bcb6a038abec84adc2ffcfe15e07cf196aa3db4f85"
     }
   ],
   "installStrategy": {

@@ -1,0 +1,105 @@
+diff --git a/src/components/chat/hooks/useChatMessages.ts b/src/components/chat/hooks/useChatMessages.ts
+index 4e8eb33..23fc173 100644
+--- a/src/components/chat/hooks/useChatMessages.ts
++++ b/src/components/chat/hooks/useChatMessages.ts
+@@ -106,8 +106,52 @@ export function normalizedToChatMessages(messages: NormalizedMessage[]): ChatMes
+       }
+     }
+   }
++  // AgentMate subagent-folding (0003): LIVE inline subagent events (thinking /
++  // text / tool_use / tool_result) arrive tagged with parentToolUseId. Group
++  // them by parent Agent toolId into childTools + a result (the subagent's last
++  // assistant text), so they fold into the container instead of leaking.
++  const liveChildToolsByParent = new Map<string, SubagentChildTool[]>();
++  const liveResultByParent = new Map<string, string>();
++  for (const msg of messages) {
++    if (!msg.parentToolUseId || !subagentToolIds.has(msg.parentToolUseId)) {
++      continue;
++    }
++    if (msg.kind === 'tool_use' && msg.toolId) {
++      const list = liveChildToolsByParent.get(msg.parentToolUseId) ?? [];
++      list.push({
++        toolId: msg.toolId,
++        toolName: msg.toolName || '',
++        toolInput: msg.toolInput,
++        toolResult: null,
++        timestamp: new Date(msg.timestamp),
++      });
++      liveChildToolsByParent.set(msg.parentToolUseId, list);
++    } else if (msg.kind === 'text' && msg.role === 'assistant' && msg.content) {
++      liveResultByParent.set(msg.parentToolUseId, msg.content);
++    }
++  }
++  // Attach each subagent tool_result to its childTool (match by toolId).
++  for (const msg of messages) {
++    if (msg.kind !== 'tool_result' || !msg.toolId || !msg.parentToolUseId) {
++      continue;
++    }
++    const tools = liveChildToolsByParent.get(msg.parentToolUseId);
++    const tool = tools?.find((t) => t.toolId === msg.toolId);
++    if (tool) {
++      tool.toolResult = {
++        content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content ?? ''),
++        isError: Boolean((msg as any).isError),
++      };
++    }
++  }
+ 
+   for (const msg of messages) {
++    // AgentMate subagent-folding (0003): subagent-originated events are folded
++    // into their parent Agent container above; skip standalone rendering.
++    // Orphans (parent not in the loaded set) still render so output is never lost.
++    if (msg.parentToolUseId && subagentToolIds.has(msg.parentToolUseId)) {
++      continue;
++    }
+     const sharedMetadata = {
+       displayText: msg.displayText,
+       commandName: msg.commandName,
+@@ -185,6 +229,7 @@ export function normalizedToChatMessages(messages: NormalizedMessage[]): ChatMes
+ 
+         // Build child tools from subagentTools
+         const childTools: SubagentChildTool[] = [];
++        const seenChildToolIds = new Set<string>();
+         if (isSubagentContainer && msg.subagentTools && Array.isArray(msg.subagentTools)) {
+           for (const tool of msg.subagentTools as any[]) {
+             childTools.push({
+@@ -194,6 +239,16 @@ export function normalizedToChatMessages(messages: NormalizedMessage[]): ChatMes
+               toolResult: tool.toolResult || null,
+               timestamp: new Date(tool.timestamp || Date.now()),
+             });
++            if (tool.toolId) seenChildToolIds.add(tool.toolId);
++          }
++        }
++        // AgentMate subagent-folding (0003): merge LIVE inline child tools,
++        // deduped by toolId against the backend set above.
++        if (isSubagentContainer && msg.toolId) {
++          for (const tool of liveChildToolsByParent.get(msg.toolId) ?? []) {
++            if (tool.toolId && seenChildToolIds.has(tool.toolId)) continue;
++            childTools.push(tool);
++            if (tool.toolId) seenChildToolIds.add(tool.toolId);
+           }
+         }
+ 
+@@ -211,13 +266,21 @@ export function normalizedToChatMessages(messages: NormalizedMessage[]): ChatMes
+         const asyncNotif = isSubagentContainer && msg.toolId
+           ? taskNotificationsByToolId.get(msg.toolId)
+           : undefined;
++        const liveResult = isSubagentContainer && msg.toolId
++          ? liveResultByParent.get(msg.toolId)
++          : undefined;
++        // Result priority: async <task-notification> (0002) -> live final text
++        // (0003) -> immediate ack (default). Each keeps the container's output
++        // inside the fold instead of leaking into the main conversation.
+         const subagentResult = asyncNotif
+           ? {
+               content: asyncNotif.result || '',
+               isError: asyncNotif.status === 'failed' || asyncNotif.status === 'error',
+               toolUseResult: toolResult?.toolUseResult,
+             }
+-          : toolResult;
++          : (liveResult
++              ? { content: liveResult, isError: false, toolUseResult: toolResult?.toolUseResult }
++              : toolResult);
+ 
+         converted.push({
+           type: 'assistant',
