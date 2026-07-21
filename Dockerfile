@@ -75,8 +75,9 @@ RUN chmod +x /tmp/agentmate/apply-cloudcli-patches.sh \
  && CLOUDCLI_ROOT="${CLOUDCLI_ROOT}" \
     AGENTMATE_PATCH_DIR=/tmp/agentmate/patches \
     /tmp/agentmate/apply-cloudcli-patches.sh \
- # second gate: confirm the subagent-path Layer B patch landed in dist-server:
+ # second gate: confirm each AgentMate Layer B patch landed in dist-server:
  && grep -Fq '// AgentMate subagent-path patch' "${CLOUDCLI_ROOT}/dist-server/server/modules/providers/list/claude/claude-sessions.provider.js" \
+ && grep -Fq '// AgentMate synthetic-skill-text patch' "${CLOUDCLI_ROOT}/dist-server/server/modules/providers/list/claude/claude-sessions.provider.js" \
  && rm -rf /tmp/agentmate
 
 # The base image's default user is root; its entrypoint drops privileges to the
