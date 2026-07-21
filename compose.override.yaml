@@ -1,0 +1,4 @@
+services:
+  agentmate:
+    volumes:
+      - ./data/bin/officecli:/usr/local/bin/officecli:ro

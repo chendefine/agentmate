@@ -1,0 +1,137 @@
+# 构建 AgentMate Docker 镜像,并发布到 GHCR(始终)与 Docker Hub(配置凭据后)。
+#
+# 触发:
+#   - push 到 main            -> 发布 :latest :sha-<short> :main
+#   - 推送 v* 标签(如 v1.2.3)  -> 发布 :1.2.3 :1.2 :1 :sha-<short>
+#   - 针对 main 的 PR          -> 只构建不发布(校验 Dockerfile + fail-closed 补丁)
+#   - 手动 workflow_dispatch
+#
+# 需要配置的 Secrets(仓库 Settings → Secrets and variables → Actions):
+#   GHCR       —— 无需配置,使用自动提供的 GITHUB_TOKEN。
+#   Docker Hub —— 可选。创建以下两个 secret 后,Docker Hub 发布自动开启:
+#                 DOCKERHUB_USERNAME  Docker Hub 用户名(对应 compose 里的 chendefine)
+#                 DOCKERHUB_TOKEN     Docker Hub 的 Access Token(勿用密码)
+name: Build & publish Docker image
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# 同一分支/标签的新运行取消旧的,节省 CI 额度。
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 构建的目标平台。默认 linux/amd64(与 Layer A 构建脚本 pin 的 --platform 一致)。
+  # 确认基础镜像 coderluii/holyclaude:1.5.0 支持 arm64 后,改为
+  # "linux/amd64,linux/arm64",并在 steps 里加一步 docker/setup-qemu-action@v3。
+  PLATFORMS: linux/amd64
+  # Docker Hub 上的镜像名(对应 compose.yaml 里的 image: chendefine/agentmate)。
+  DOCKERHUB_IMAGE: chendefine/agentmate
+
+permissions:
+  contents: read
+  packages: write # 推送到 ghcr.io/<owner>/<repo>
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 仅判断 Docker Hub 凭据是否存在(用于条件登录 / 条件打 tag)。
+      # secret 只通过 env 读取,绝不写进 if 表达式或日志。
+      - name: Detect Docker Hub credentials
+        id: dh
+        env:
+          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+        shell: bash
+        run: |
+          if [ -n "$DH_USER" ]; then
+            echo "enabled=true"  >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ---- 登录(仅非 PR 才推送,故 PR 跳过登录)----
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request' && steps.dh.outputs.enabled == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 始终发布到 GHCR;仅当 Docker Hub 凭据存在时额外加上 Docker Hub。
+      - name: Resolve registry targets
+        id: targets
+        env:
+          DH_ENABLED: ${{ steps.dh.outputs.enabled }}
+        shell: bash
+        run: |
+          images="ghcr.io/${GITHUB_REPOSITORY,,}"
+          if [ "$DH_ENABLED" = "true" ]; then
+            images="${images},${DOCKERHUB_IMAGE}"
+          fi
+          echo "images=${images}" >> "$GITHUB_OUTPUT"
+
+      - name: Image metadata (tags & labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.targets.outputs.images }}
+          # 默认 flavor 会在默认分支(main)上自动加 :latest
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix=sha-,format=short
+
+      - name: Build & push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ env.PLATFORMS }}
+          # PR 只构建不发布(校验 fail-closed 补丁仍能 apply)
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Job summary
+        if: github.event_name != 'pull_request'
+        env:
+          META: ${{ steps.build.outputs.metadata }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        shell: bash
+        run: |
+          {
+            echo "### 🐳 已发布的 Docker 镜像"
+            echo ""
+            echo "| reference | digest |"
+            echo "| --- | --- |"
+            echo "$META" | jq -r 'to_entries[] | "| `\(.key)` | `\(.value.digest)` |"' 2>/dev/null \
+              || echo "| (见 Actions 日志) | \`${DIGEST}\` |"
+            echo ""
+            echo "**平台**: \`${{ env.PLATFORMS }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

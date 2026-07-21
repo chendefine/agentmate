@@ -6,7 +6,8 @@
 
 services:
   agentmate:
-    image: chendefine/agentmate:latest
+    # Tag is derived from git by scripts/compose.sh; set IMAGE_TAG to override.
+    image: chendefine/agentmate:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: Dockerfile
@@ -69,9 +70,10 @@ services:
       #
       # - ./data/ssh/authorized_keys:/run/holyclaude-ssh/authorized_keys:ro
       # - holyclaude-ssh:/var/lib/holyclaude-ssh
+      #
       # OPTIONAL BINARY TOOLS
       # Mount any CLI tools you want to use inside the container.
-      - ./data/bin/officecli:/usr/local/bin/officecli:ro
+      # - ./data/bin/officecli:/usr/local/bin/officecli:ro
     environment:
       #
       # TIMEZONE
